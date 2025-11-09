@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from ..core_services.predict_service import predict_disease
+from core_services.predict_service import predict_disease
 
 router = APIRouter()
 
