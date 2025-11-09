@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from ..core_services.metrics_service import compute_metrics
+from core_services.metrics_service import compute_metrics
 
 router = APIRouter()
 
