@@ -4,7 +4,7 @@ from core_services.visualization_service import Visual
 router = APIRouter()
 datasource = ...  # Placeholder for actual data source
 
-@router.post("/")
+@router.get("/")
 def get_visualization():
     '''
     返回可视化图表

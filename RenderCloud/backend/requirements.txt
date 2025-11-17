@@ -9,3 +9,4 @@ joblib
 gunicorn
 xgboost
 streamlit
+shap

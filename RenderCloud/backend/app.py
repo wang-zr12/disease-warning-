@@ -28,6 +28,11 @@ app.add_middleware(
     allow_headers=["*"],  # 允许所有头部
 )
 # --- CORS 设置结束 ---
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Disease Warning API!"}
+
 if __name__ == "__main__":
     import uvicorn, os
     port = int(os.environ.get("PORT", 8000))
