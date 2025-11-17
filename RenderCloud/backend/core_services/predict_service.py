@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List
 import logging
 import os
 from config_ import MODEL_DIR, MODEL_REGISTRY
-from metrics_service import SHAPCalculator
+from core_services.metrics_service import SHAPCalculator
 from utils_ import is_onnx_model, ONNXModelWrapper
 
 logger = logging.getLogger(__name__)
