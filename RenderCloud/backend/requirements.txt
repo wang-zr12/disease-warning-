@@ -8,4 +8,7 @@ joblib==1.2.0
 requests
 gunicorn
 shap
+xgboost
 onnxruntime
+lightgbm
+
