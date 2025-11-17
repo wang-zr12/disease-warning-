@@ -9,7 +9,7 @@ DATA_DIR = Path(f"{PROJECT_ROOT}/data")
 raw_data_file = DATA_DIR / "nhanes_2021_2023_master.csv"
 
 MODEL_REGISTRY = {
-    "ckd_default": joblib.load(f"{MODEL_DIR}/ckd_lgbm.joblib"),
+    "ckd_default": joblib.load(f"{MODEL_DIR}/ckd_lgbm.pkl"),
     "diabetes_full": joblib.load(f"{MODEL_DIR}/diabetes_full.joblib"),
     "diabetes_basic": joblib.load(f"{MODEL_DIR}/diabetes_basic.joblib"),
     "hypertension_full": joblib.load(f"{MODEL_DIR}/hypertension_full.joblib"),
