@@ -10,3 +10,5 @@ gunicorn
 shap
 xgboost
 onnxruntime
+lightgbm
+
