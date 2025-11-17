@@ -7,7 +7,5 @@ scikit-learn==1.2.2
 joblib==1.2.0
 requests
 gunicorn
-xgboost
-streamlit
 shap
-lightgbm
+onnxruntime

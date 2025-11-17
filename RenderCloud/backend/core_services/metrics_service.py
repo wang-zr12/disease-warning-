@@ -1,5 +1,6 @@
 # 在文件开头添加
-from config import MODEL_DIR, get_model_version, get_all_diseases
+from config_ import MODEL_DIR, get_model_version, get_all_diseases
+from utils_ import ONNXModelWrapper, is_onnx_model
 import pickle
 from typing import Any, Dict, List, Optional
 import numpy as np
@@ -53,28 +54,46 @@ class SHAPCalculator(MetricCalculator):
 
             X = np.array([[input_data[f] for f in feature_names]])
 
+            # 如果是ONNX模型，包装一下
+            if is_onnx_model(model):
+                model = ONNXModelWrapper(model)
+                logger.info("使用ONNX模型进行SHAP计算")
+
             # 根据模型类型选择合适的explainer
             if hasattr(model, 'tree_'):
-                # 树模型（决策树、随机森林等）
+                # 树模型（决策树、随机森林、LGBM等）
                 explainer = shap.TreeExplainer(model)
+                logger.info("使用TreeExplainer")
             else:
                 # 其他模型使用KernelExplainer
-                # 创建背景数据（这里简化处理，实际应该用训练数据）
+                # 创建背景数据（使用零值或中位数）
                 background = np.zeros((self.background_samples, len(feature_names)))
+
+                # 尝试使用更有意义的背景数据
+                # 可以基于输入数据的范围生成
+                for i, feature in enumerate(feature_names):
+                    if feature in input_data:
+                        val = input_data[feature]
+                        if isinstance(val, (int, float)):
+                            # 在当前值附近生成背景样本
+                            background[:, i] = np.random.normal(val, abs(val) * 0.1, self.background_samples)
+
                 explainer = shap.KernelExplainer(model.predict_proba, background)
+                logger.info("使用KernelExplainer")
 
             # 计算SHAP值
             shap_values = explainer.shap_values(X)
 
             # 处理多分类情况
             if isinstance(shap_values, list):
-                # 多分类：取第一个类别的SHAP值
-                shap_values = shap_values[0]
+                # 多分类：取正类（通常是第二个类别）的SHAP值
+                shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
 
-            # 转换为字典格式
+            # 转换为1D数组
             if len(shap_values.shape) > 1:
                 shap_values = shap_values[0]
 
+            # 转换为字典格式
             shap_dict = {
                 feature: float(value)
                 for feature, value in zip(feature_names, shap_values)
@@ -87,19 +106,28 @@ class SHAPCalculator(MetricCalculator):
                 reverse=True
             )
 
+            # 获取基准值
+            base_value = 0.0
+            if hasattr(explainer, 'expected_value'):
+                expected = explainer.expected_value
+                if isinstance(expected, (list, np.ndarray)):
+                    # 多分类情况，取正类的期望值
+                    base_value = float(expected[1] if len(expected) > 1 else expected[0])
+                else:
+                    base_value = float(expected)
+
             return {
                 "shap_values": shap_dict,
                 "feature_importance": [
                     {"feature": f, "importance": v}
                     for f, v in sorted_features
                 ],
-                "base_value": float(explainer.expected_value) if hasattr(explainer, 'expected_value') else 0.0
+                "base_value": base_value
             }
 
         except Exception as e:
-            logger.error(f"SHAP计算失败: {str(e)}")
+            logger.error(f"SHAP计算失败: {str(e)}", exc_info=True)
             raise ValueError(f"SHAP计算失败: {str(e)}")
-
 
 class FeatureImportanceCalculator(MetricCalculator):
     """特征重要性计算器"""

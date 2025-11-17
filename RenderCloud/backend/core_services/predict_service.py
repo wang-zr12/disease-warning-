@@ -9,6 +9,7 @@ import logging
 import os
 from config_ import MODEL_DIR, MODEL_REGISTRY
 from metrics_service import SHAPCalculator
+from utils_ import is_onnx_model, ONNXModelWrapper
 
 logger = logging.getLogger(__name__)
 FEA_TOTAL_AMOUNT = 20  # 假设总特征数量为20，根据实际情况调整
@@ -118,6 +119,7 @@ FEATURE_SETS = {
 }
 
 CKD_FEATURES = json.loads(Path(f"{MODEL_DIR}/ckd_features.json").read_text())
+
 
 
 def preprocess_input_3(user_data: Dict[str, Any], required_features: List[str]) -> Dict[str, Any]:
@@ -237,7 +239,133 @@ def prepare_input_ckd(user_dict: Dict[str, Any]) -> (Dict[str, Any], Dict[str, A
     return features_dict, imputation_meta
 
 
-def predict_disease(disease: str, input_data: Dict[str, Any], model_version: Optional[str] = None) -> Dict[str, Any]:
+def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    对所有疾病进行预测，自动选择合适的模型版本
+
+    Args:
+        input_data: 输入特征字典
+
+    Returns:
+        results : dict
+            包含每个疾病预测结果的字典
+            例如:
+            {
+                "diabetes": {"prediction": 1, "confidence": 0.85, "risk": 85.0, "shap": {fea1: +5, fea2: -3, ...}},
+                "hypertension": {"prediction": 0, "confidence": 0.90, "risk": 10.0, "shap": {...}},
+                ...
+            }
+    """
+
+    model_routing = choose_model_version(input_data)
+    results = {}
+    for disease, model_type in model_routing.items():
+        # 获取所需特征列表
+        key = f"{disease}_{model_type}"
+        required_features = FEATURE_SETS[key]
+
+        try:
+            if disease == 'ckd':
+                X, _ = prepare_input_ckd(input_data)
+            else:
+                X = preprocess_input_3(input_data, required_features)
+
+            model = MODEL_REGISTRY[key]
+            shap = SHAPCalculator().compute(model, X)
+
+            # 只保留原本不为空的变量shap值
+            valid_features = [k for k, v in X.items() if v is not None]
+            shap['shap_values'] = {k: v for k, v in shap['shap_values'].items() if k in valid_features}
+
+            X = np.array([list(X[feat] for feat in sorted(X.keys()))])  # 转Dict为2D数组
+
+            # 根据模型类型执行预测
+            if is_onnx_model(model):
+                logger.info(f"使用ONNX模型预测 {disease}")
+                prediction = int(ONNXModelWrapper.onnx_predict(model, X)[0])
+                probabilities = ONNXModelWrapper.onnx_predict_proba(model, X)[0]
+            else:
+                logger.info(f"使用sklearn模型预测 {disease}")
+                prediction = int(model.predict(X)[0])
+                probabilities = model.predict_proba(X)[0]
+
+            confidence = float(max(probabilities))
+            risk = confidence * 100 if prediction == 1 else (1 - confidence) * 100
+
+            results[disease] = {"prediction": prediction, "confidence": confidence, "risk": risk,
+                                "shap": shap['shap_values']}
+        except Exception as e:
+            results[disease] = {"error": str(e)}
+
+    return results
+
+
+def choose_model_version(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    根据用户输入的特征列表，决定每个疾病使用哪个模型版本
+
+    Parameters:
+    input_features : Dict[str, Any]
+
+
+    Returns:
+    dict : 疾病名称到模型版本的映射
+           例如: {'diabetes': 'full', 'hypertension': 'basic', 'cvd': 'full'}
+           如果某个疾病无法预测（连basic版本都不满足），则不返回该疾病
+
+    """
+    input_features = [k for k, v in input_data.items() if v is not None]
+    input_features_set = set(input_features)
+    model_routing = {'ckd': 'default'}
+    if 'DIQ010' not in input_features_set:
+        if input_features_set.issuperset(DIABETES_FEATURES):
+            model_routing['diabetes'] = 'full'
+        elif input_features_set.issuperset(DIABETES_FEATURES_BASIC):
+            model_routing['diabetes'] = 'basic'
+        else:
+            logger.info("User input features insufficient for diabetes model prediction")
+    else:
+        logger.info("User input contains diabetes info, skipping diabetes model prediction")
+    if 'BPQ020' not in input_features_set:
+        if input_features_set.issuperset(HYPERTENSION_FEATURES):
+            model_routing['hypertension'] = 'full'
+        elif input_features_set.issuperset(HYPERTENSION_FEATURES_BASIC):
+            model_routing['hypertension'] = 'basic'
+        else:
+            logger.info("User input features insufficient for hypertension model prediction")
+    else:
+        logger.info("User input contains hypertension info, skipping hypertension model prediction")
+    if input_features_set.issuperset(CVD_FEATURES):
+        model_routing['cvd'] = 'full'
+    elif input_features_set.issuperset(CVD_FEATURES_BASIC):
+        model_routing['cvd'] = 'basic'
+
+    return model_routing
+
+
+def preprocess_input_all(input_data: Dict[str, Any], model) -> np.ndarray:
+    """
+    预处理输入数据，转换为模型可接受的格式
+
+    Args:
+        input_data: 输入特征字典
+        model: 已加载的模型对象
+
+    Returns:
+        numpy数组
+    """
+    sorted_keys = sorted(input_data.keys())
+    X = [input_data[key] for key in sorted_keys]
+
+    if hasattr(model, 'feature_names_in_'):
+        X = [input_data.get(feature, 0) for feature in model.feature_names_in_]
+
+    # 转换为2D数组
+    X = np.array([X])
+
+    return X
+
+def predict_single_disease(disease: str, input_data: Dict[str, Any], model_version: Optional[str] = None) -> Dict[str, Any]:
     """
     执行疾病预测
 
@@ -316,123 +444,6 @@ def predict_disease(disease: str, input_data: Dict[str, Any], model_version: Opt
         result["class_probabilities"] = class_probabilities
 
     return result
-
-
-def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    对所有疾病进行预测，自动选择合适的模型版本
-
-    Args:
-        input_data: 输入特征字典
-
-    Returns:
-        results : dict
-            包含每个疾病预测结果的字典
-            例如:
-            {
-                "diabetes": {"prediction": 1, "confidence": 0.85, "risk": 85.0, "shap": {fea1: +5, fea2: -3, ...}},
-                "hypertension": {"prediction": 0, "confidence": 0.90, "risk": 10.0, "shap": {...}},
-                ...
-            }
-    """
-
-    model_routing = choose_model_version(input_data)
-    results = {}
-    for disease, model_type in model_routing.items():
-        # 获取所需特征列表
-        key = f"{disease}_{model_type}"
-        required_features = FEATURE_SETS[key]
-
-        try:
-            if disease == 'ckd':
-                X, _ = prepare_input_ckd(input_data)
-            else:
-                X = preprocess_input_3(input_data, required_features)
-
-            model = MODEL_REGISTRY[key]
-            shap = SHAPCalculator().compute(model, X)
-            # 去掉原本为空的变量shap值
-            missing_features = [k for k, v in X.items() if v is None]
-            for feat in missing_features:
-                shap['shap_values'].pop(feat, None)
-            X = np.array([list(X[feat] for feat in sorted(X.keys()))])  # 转Dict为2D数组
-            prediction = model.predict([X])[0]
-            probabilities = model.predict_proba([X])[0]
-            confidence = float(max(probabilities))
-            risk = confidence * 100 if prediction == 1 else (1 - confidence) * 100
-
-            results[disease] = {"prediction": prediction, "confidence": confidence, "risk": risk,
-                                "shap": shap['shap_values']}
-        except Exception as e:
-            results[disease] = {"error": str(e)}
-
-    return results
-
-
-def choose_model_version(input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    根据用户输入的特征列表，决定每个疾病使用哪个模型版本
-
-    Parameters:
-    input_features : Dict[str, Any]
-
-
-    Returns:
-    dict : 疾病名称到模型版本的映射
-           例如: {'diabetes': 'full', 'hypertension': 'basic', 'cvd': 'full'}
-           如果某个疾病无法预测（连basic版本都不满足），则不返回该疾病
-
-    """
-    input_features = [k for k, v in input_data.items() if v is not None]
-    input_features_set = set(input_features)
-    model_routing = {'ckd': 'default'}
-    if 'DIQ010' not in input_features_set:
-        if input_features_set.issuperset(DIABETES_FEATURES):
-            model_routing['diabetes'] = 'full'
-        elif input_features_set.issuperset(DIABETES_FEATURES_BASIC):
-            model_routing['diabetes'] = 'basic'
-        else:
-            logger.info("User input features insufficient for diabetes model prediction")
-    else:
-        logger.info("User input contains diabetes info, skipping diabetes model prediction")
-    if 'BPQ020' not in input_features_set:
-        if input_features_set.issuperset(HYPERTENSION_FEATURES):
-            model_routing['hypertension'] = 'full'
-        elif input_features_set.issuperset(HYPERTENSION_FEATURES_BASIC):
-            model_routing['hypertension'] = 'basic'
-        else:
-            logger.info("User input features insufficient for hypertension model prediction")
-    else:
-        logger.info("User input contains hypertension info, skipping hypertension model prediction")
-    if input_features_set.issuperset(CVD_FEATURES):
-        model_routing['cvd'] = 'full'
-    elif input_features_set.issuperset(CVD_FEATURES_BASIC):
-        model_routing['cvd'] = 'basic'
-
-    return model_routing
-
-
-def preprocess_input_all(input_data: Dict[str, Any], model) -> np.ndarray:
-    """
-    预处理输入数据，转换为模型可接受的格式
-
-    Args:
-        input_data: 输入特征字典
-        model: 已加载的模型对象
-
-    Returns:
-        numpy数组
-    """
-    sorted_keys = sorted(input_data.keys())
-    X = [input_data[key] for key in sorted_keys]
-
-    if hasattr(model, 'feature_names_in_'):
-        X = [input_data.get(feature, 0) for feature in model.feature_names_in_]
-
-    # 转换为2D数组
-    X = np.array([X])
-
-    return X
 
 
 def get_model_info(disease: str, model_version: Optional[str] = None) -> Dict[str, Any]:
