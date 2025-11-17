@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import logging
 import os
-from config import MODEL_DIR, MODEL_REGISTRY
+from config_ import MODEL_DIR, MODEL_REGISTRY
 from metrics_service import SHAPCalculator
 
 logger = logging.getLogger(__name__)

@@ -27,7 +27,5 @@ def predict(
 
 @router.post("/all")
 def predict(req: PredictionRequest):
-    df = pd.DataFrame([req.input_data])
-    result = predict_all(df)
-
+    result = predict_all(req.input_data)
     return result
