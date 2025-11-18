@@ -1,6 +1,7 @@
-# 在文件开头添加
+import onnxruntime as ort
+
 from config_ import MODEL_DIR, get_model_version, get_all_diseases
-from utils_ import ONNXModelWrapper, is_onnx_model
+from utils_ import onnx_predict_proba, is_onnx_model
 import pickle
 from typing import Any, Dict, List, Optional
 import numpy as np
@@ -48,81 +49,96 @@ class SHAPCalculator(MetricCalculator):
             包含SHAP值的字典
         """
         try:
-            # 准备输入数据
             if feature_names is None:
                 feature_names = sorted(input_data.keys())
 
-            X = np.array([[input_data[f] for f in feature_names]])
+            # 构造单条样本输入
+            X = np.array([[input_data[f] for f in feature_names]], dtype=np.float32)  # (1, n_features)
 
-            # 如果是ONNX模型，包装一下
-            if is_onnx_model(model):
-                model = ONNXModelWrapper(model)
-                logger.info("使用ONNX模型进行SHAP计算")
-
-            # 根据模型类型选择合适的explainer
-            if hasattr(model, 'tree_'):
-                # 树模型（决策树、随机森林、LGBM等）
-                explainer = shap.TreeExplainer(model)
-                logger.info("使用TreeExplainer")
+            # ==================== 1. 判断模型类型并包装 predict_proba ====================
+            if isinstance(model, ort.InferenceSession):
+                # ONNX 模型：使用你写好的工具函数
+                predict_proba_func = lambda X: onnx_predict_proba(model, X)
+                logger.info("ONNX 模型，使用 utils_.py 中的 onnx_predict_proba")
             else:
-                # 其他模型使用KernelExplainer
-                # 创建背景数据（使用零值或中位数）
-                background = np.zeros((self.background_samples, len(feature_names)))
+                # 普通模型（sklearn, lightgbm, xgboost 等）直接使用 predict_proba
+                if not hasattr(model, "predict_proba"):
+                    raise ValueError("模型必须支持 predict_proba 或为 ONNX InferenceSession")
+                predict_proba_func = model.predict_proba
+                logger.info(f"使用原生模型 {type(model).__name__} 的 predict_proba")
 
-                # 尝试使用更有意义的背景数据
-                # 可以基于输入数据的范围生成
-                for i, feature in enumerate(feature_names):
-                    if feature in input_data:
-                        val = input_data[feature]
-                        if isinstance(val, (int, float)):
-                            # 在当前值附近生成背景样本
-                            background[:, i] = np.random.normal(val, abs(val) * 0.1, self.background_samples)
-
-                explainer = shap.KernelExplainer(model.predict_proba, background)
-                logger.info("使用KernelExplainer")
-
-            # 计算SHAP值
-            shap_values = explainer.shap_values(X)
-
-            # 处理多分类情况
-            if isinstance(shap_values, list):
-                # 多分类：取正类（通常是第二个类别）的SHAP值
-                shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
-
-            # 转换为1D数组
-            if len(shap_values.shape) > 1:
-                shap_values = shap_values[0]
-
-            # 转换为字典格式
-            shap_dict = {
-                feature: float(value)
-                for feature, value in zip(feature_names, shap_values)
-            }
-
-            # 排序（按绝对值）
-            sorted_features = sorted(
-                shap_dict.items(),
-                key=lambda x: abs(x[1]),
-                reverse=True
+            # ==================== 2. 优先使用 TreeExplainer（最快最准）===================
+            is_tree_model = any(
+                keyword in str(type(model)).lower()
+                for keyword in ["lgbm", "xgb", "catboost", "randomforest", "gradientboosting", "sklearn"]
             )
 
-            # 获取基准值
-            base_value = 0.0
-            if hasattr(explainer, 'expected_value'):
-                expected = explainer.expected_value
-                if isinstance(expected, (list, np.ndarray)):
-                    # 多分类情况，取正类的期望值
-                    base_value = float(expected[1] if len(expected) > 1 else expected[0])
+            if is_tree_model and not isinstance(model, ort.InferenceSession):
+                explainer = shap.TreeExplainer(model)
+                logger.info("使用 TreeExplainer（推荐：速度快、精确）")
+                shap_values = explainer.shap_values(X)
+
+                # TreeExplainer 二分类返回 list[2]，我们只取正类（class1）
+                if isinstance(shap_values, list):
+                    sv_positive = np.asarray(shap_values[1]).ravel() if len(shap_values) > 1 else np.asarray(
+                        shap_values[0]).ravel()
+                    base_value = float(
+                        explainer.expected_value[1] if len(explainer.expected_value) > 1 else explainer.expected_value)
                 else:
-                    base_value = float(expected)
+                    sv_positive = np.asarray(shap_values).ravel()
+                    base_value = float(explainer.expected_value)
+
+            else:
+                # ==================== 3. 其他模型（包括 ONNX）使用 KernelExplainer ====================
+                logger.info("使用 KernelExplainer（ONNX 或非树模型）")
+
+                # 构造更合理的背景数据集
+                background = np.zeros((self.background_samples, len(feature_names)), dtype=np.float32)
+                for i, f in enumerate(feature_names):
+                    val = float(input_data.get(f, 0))
+                    scale = max(abs(val) * 0.2, 1e-3)
+                    background[:, i] = np.clip(
+                        np.random.normal(val, scale, self.background_samples),
+                        -1e6, 1e6
+                    )
+
+                explainer = shap.KernelExplainer(predict_proba_func, background)
+                shap_values = explainer.shap_values(X, nsamples=100)  # 可调精度
+
+                # KernelExplainer 返回格式处理
+                sv = np.asarray(shap_values)
+                if sv.ndim == 3:
+                    if sv.shape[1] == 2:  # (1, 2, n_features)
+                        sv_positive = sv[0, 1, :]
+                    elif sv.shape[2] == 2:  # (1, n_features, 2)
+                        sv_positive = sv[0, :, 1]
+                    else:
+                        sv_positive = sv[0]
+                else:
+                    sv_positive = sv.ravel()
+
+                # 取正类的 expected_value
+                exp = explainer.expected_value
+                if isinstance(exp, (list, np.ndarray)) and len(exp) > 1:
+                    base_value = float(exp[1])
+                else:
+                    base_value = float(exp) if np.isscalar(exp) else float(exp.ravel()[0])
+
+            # ==================== 4. 最终返回：只返回正类贡献（你最想要的）===================
+            shap_dict = {
+                feature: float(value)
+                for feature, value in zip(feature_names, sv_positive)
+            }
+
+            # 按绝对值排序
+            sorted_items = sorted(shap_dict.items(), key=lambda x: abs(x[1]), reverse=True)
 
             return {
-                "shap_values": shap_dict,
+                "shap_values": shap_dict,  # { "age": 0.25, "oldpeak": -0.18, ... }
+                "base_value": base_value,  # 正类的 base value（logit 空间）
                 "feature_importance": [
-                    {"feature": f, "importance": v}
-                    for f, v in sorted_features
-                ],
-                "base_value": base_value
+                    {"feature": f, "importance": v} for f, v in sorted_items
+                ]
             }
 
         except Exception as e:

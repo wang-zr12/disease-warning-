@@ -1,125 +1,27 @@
 import pandas as pd
 import pickle
-import json
 import joblib
 import numpy as np
-from pathlib import Path
 from typing import Dict, Any, Optional, List
 import logging
 import os
-from config_ import MODEL_DIR, MODEL_REGISTRY
-from core_services.metrics_service import SHAPCalculator
-from utils_ import is_onnx_model, ONNXModelWrapper
-
-logger = logging.getLogger(__name__)
-FEA_TOTAL_AMOUNT = 20  # 假设总特征数量为20，根据实际情况调整
-
+import sys
+from pathlib import Path
 from typing import Dict, List, Any
 
-# Feature Definitions
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 返回到 project_root/
+# print(PROJECT_ROOT)
+sys.path.append(str(PROJECT_ROOT))
+from config_ import MODEL_DIR, MODEL_REGISTRY, FEATURE_SETS, CKD_FEATURES
+from utils_ import is_onnx_model, onnx_predict, onnx_predict_proba
+from metrics_service import SHAPCalculator
 
-DIABETES_FEATURES = [
-    'RIDAGEYR',  # Age (年龄)
-    'BMXWAIST',  # Waist circumference (cm) (腰围)
-    'RIAGENDR',  # Gender (性别)
-    'BMXBMI',  # Body Mass Index (体重指数)
-    'LBXGH',  # HbA1c (Hemoglobin A1c) (糖化血红蛋白)
-    'LBXGLU',  # Fasting Glucose (空腹血糖)
-    'LBDLDLSI',  # LDL cholesterol (mmol/L) (低密度脂蛋白胆固醇)
-    'LUXCAPM',  # FVC, mL (用力肺活量)
-    'BPXOSY1',  # Systolic Blood Pressure (收缩压)
-    'LBXTC',  # Total Cholesterol (总胆固醇)
-    'LBDHDD',  # HDL Cholesterol (高密度脂蛋白胆固醇)
-    'LBXSTR',  # Triglycerides (甘油三酯)
-    'SMQ020',  # Ever Smoked 100+ Cigarettes (是否吸过100支以上香烟)
-    'SMQ040',  # Current Smoking Status (当前吸烟状态)
-    'ALQ121',  # Alcohol (饮酒情况)
-    'PAD680'  # Physical activity (体育活动)
-]
-
-DIABETES_FEATURES_BASIC = [
-    'RIDAGEYR',  # Age (年龄)
-    'RIAGENDR',  # Gender (性别)
-    'BMXWAIST',  # Waist circumference (cm) (腰围)
-    'BMXBMI',  # BMI (体重指数)
-    'SMQ020',  # Ever Smoked 100+ Cigarettes (是否吸过100支以上香烟)
-    'SMQ040',  # Current Smoking Status (当前吸烟状态)
-    'ALQ121',  # Alcohol (饮酒情况)
-    'PAD680'  # Physical activity (体育活动)
-]
-
-HYPERTENSION_FEATURES = [
-    'RIDAGEYR',  # Age (年龄)
-    'BMXBMI',  # Body Mass Index (体重指数)
-    'RIAGENDR',  # Gender (性别)
-    'BMXWAIST',  # Waist circumference (cm) (腰围)
-    'BPXOSY1',  # Systolic BP 1st reading (第一次收缩压读数)
-    'BPXOSY2',  # Systolic BP 2nd reading (第二次收缩压读数)
-    'BPXOSY3',  # Systolic BP 3rd reading (第三次收缩压读数)
-    'LBDGLUSI',  # Fasting glucose (空腹血糖)
-    'SMQ020',  # Ever Smoked 100+ Cigarettes (是否吸过100支以上香烟)
-    'ALQ121',  # Alcohol Days/Year (每年饮酒天数)
-    'MCQ500',  # Ever told you had any kind of cancer (是否被告知患有癌症)
-    'MCQ160A',  # Ever told you had arthritis (是否被告知患有关节炎)
-    'SMQ040',  # Current Smoking Status (当前吸烟状态)
-    'PAD680'  # Physical activity (体育活动)
-]
-
-HYPERTENSION_FEATURES_BASIC = [
-    'RIDAGEYR',  # Age (年龄)
-    'RIAGENDR',  # Gender (性别)
-    'BMXBMI',  # BMI (体重指数)
-    'BMXWAIST',  # Waist circumference (cm) (腰围)
-    'SMQ020',  # Ever Smoked 100+ Cigarettes (是否吸过100支以上香烟)
-    'SMQ040',  # Current Smoking Status (当前吸烟状态)
-    'ALQ121',  # Alcohol (饮酒情况)
-    'PAD680',  # Physical activity (体育活动)
-    'MCQ500',  # Ever told you had any kind of cancer (是否被告知患有癌症)
-    'MCQ160A'  # Ever told you had arthritis (是否被告知患有关节炎)
-]
-
-CVD_FEATURES = [
-    'RIDAGEYR',  # Age (年龄)
-    'RIAGENDR',  # Gender (性别)
-    'BMXBMI',  # BMI (体重指数)
-    'MCQ160D',  # Ever told you had angina/angina pectoris (是否被告知患有心绞痛)
-    'LBDLDL',  # LDL Cholesterol (低密度脂蛋白胆固醇)
-    'MCQ160P',  # Ever told you had COPD, emphysema, or chronic bronchitis (是否被告知患有慢阻肺/肺气肿/慢性支气管炎)
-    'OSQ230',  # Any metal objects inside body (体内是否有金属物体)
-    'MCQ160A',  # Ever told you had arthritis (是否被告知患有关节炎)
-    'LBXTC',  # Total Cholesterol (总胆固醇)
-    'BPXOSY1',  # Systolic Blood Pressure (收缩压)
-    'SMQ020',  # Ever Smoked 100+ Cigarettes (是否吸过100支以上香烟)
-    'SMQ040',  # Current Smoking Status (当前吸烟状态)
-    'ALQ121',  # Alcohol (饮酒情况)
-    'PAD680'  # Physical activity (体育活动)
-]
-
-CVD_FEATURES_BASIC = [
-    'RIDAGEYR',  # Age (年龄)
-    'RIAGENDR',  # Gender (性别)
-    'BMXBMI',  # BMI (体重指数)
-    'SMQ020',  # Ever Smoked 100+ Cigarettes (是否吸过100支以上香烟)
-    'SMQ040',  # Current Smoking Status (当前吸烟状态)
-    'ALQ121',  # Alcohol (饮酒情况)
-    'PAD680',  # Physical activity (体育活动)
-    'MCQ160D',  # Ever told you had angina/angina pectoris (是否被告知患有心绞痛)
-    'MCQ160P',  # Ever told you had COPD, emphysema, or chronic bronchitis (是否被告知患有慢阻肺/肺气肿/慢性支气管炎)
-    'OSQ230',  # Any metal objects inside body (体内是否有金属物体)
-    'MCQ160A',  # Ever told you had arthritis (是否被告知患有关节炎)
-]
-
-FEATURE_SETS = {
-    'diabetes_full': DIABETES_FEATURES,
-    'diabetes_basic': DIABETES_FEATURES_BASIC,
-    'hypertension_full': HYPERTENSION_FEATURES,
-    'hypertension_basic': HYPERTENSION_FEATURES_BASIC,
-    'cvd_full': CVD_FEATURES,
-    'cvd_basic': CVD_FEATURES_BASIC,
-}
-
-CKD_FEATURES = json.loads(Path(f"{MODEL_DIR}/ckd_features.json").read_text())
-
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def preprocess_input_3(user_data: Dict[str, Any], required_features: List[str]) -> Dict[str, Any]:
@@ -195,9 +97,8 @@ def prepare_input_ckd(user_dict: Dict[str, Any]) -> (Dict[str, Any], Dict[str, A
             X[col] = pd.to_numeric(X[col], errors="coerce")
 
     # === 4. 添加 missing 掩码 ===
-    for col in base_cols:
-        missing_col = col + "_missing"
-        X[missing_col] = X[col].isna().astype(int)
+    missing_cols = {col + "_missing": X[col].isna().astype(int) for col in base_cols}
+    X = pd.concat([X, pd.DataFrame(missing_cols)], axis=1)
 
     # === 5. 填充缺失值（记录元信息）===
     imputation_meta = {
@@ -258,42 +159,45 @@ def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
     """
 
     model_routing = choose_model_version(input_data)
+    print(model_routing)
     results = {}
     for disease, model_type in model_routing.items():
         # 获取所需特征列表
         key = f"{disease}_{model_type}"
-        required_features = FEATURE_SETS[key]
-
         try:
             if disease == 'ckd':
                 X, _ = prepare_input_ckd(input_data)
             else:
+                required_features = FEATURE_SETS[key]
                 X = preprocess_input_3(input_data, required_features)
 
             model = MODEL_REGISTRY[key]
-            shap = SHAPCalculator().compute(model, X)
+            try:
+                shap = SHAPCalculator().compute(model, X)
 
-            # 只保留原本不为空的变量shap值
-            valid_features = [k for k, v in X.items() if v is not None]
-            shap['shap_values'] = {k: v for k, v in shap['shap_values'].items() if k in valid_features}
+                # 只保留原本不为空的变量shap值
+                valid_features = [k for k, v in input_data.items() if v is not None]
+                shap['shap_values'] = {k: v for k, v in shap['shap_values'].items() if k in valid_features}
+            except Exception as e:
+                logger.warning(f"SHAP计算失败: {e}")
+                shap = {'shap_values': {str(e)}}
 
             X = np.array([list(X[feat] for feat in sorted(X.keys()))])  # 转Dict为2D数组
-
             # 根据模型类型执行预测
             if is_onnx_model(model):
                 logger.info(f"使用ONNX模型预测 {disease}")
-                prediction = int(ONNXModelWrapper.onnx_predict(model, X)[0])
-                probabilities = ONNXModelWrapper.onnx_predict_proba(model, X)[0]
+                prediction = int(onnx_predict(model, X)[0])
+                probabilities = onnx_predict_proba(model, X)[0]
             else:
-                logger.info(f"使用sklearn模型预测 {disease}")
+                logger.info(f"使用其他模型预测 {disease}")
                 prediction = int(model.predict(X)[0])
                 probabilities = model.predict_proba(X)[0]
 
             confidence = float(max(probabilities))
             risk = confidence * 100 if prediction == 1 else (1 - confidence) * 100
 
-            results[disease] = {"prediction": prediction, "confidence": confidence, "risk": risk,
-                                "shap": shap['shap_values']}
+            results[disease] = {"prediction": prediction, "confidence": confidence, "risk": int(risk),
+                                "shap": shap['shap_values']}  # 对负类（健康）的SHAP值
         except Exception as e:
             results[disease] = {"error": str(e)}
 
@@ -318,26 +222,26 @@ def choose_model_version(input_data: Dict[str, Any]) -> Dict[str, Any]:
     input_features_set = set(input_features)
     model_routing = {'ckd': 'default'}
     if 'DIQ010' not in input_features_set:
-        if input_features_set.issuperset(DIABETES_FEATURES):
+        if input_features_set.issuperset(FEATURE_SETS['diabetes_full']):
             model_routing['diabetes'] = 'full'
-        elif input_features_set.issuperset(DIABETES_FEATURES_BASIC):
+        elif input_features_set.issuperset(FEATURE_SETS['diabetes_basic']):
             model_routing['diabetes'] = 'basic'
         else:
             logger.info("User input features insufficient for diabetes model prediction")
     else:
         logger.info("User input contains diabetes info, skipping diabetes model prediction")
     if 'BPQ020' not in input_features_set:
-        if input_features_set.issuperset(HYPERTENSION_FEATURES):
+        if input_features_set.issuperset(FEATURE_SETS['hypertension_full']):
             model_routing['hypertension'] = 'full'
-        elif input_features_set.issuperset(HYPERTENSION_FEATURES_BASIC):
+        elif input_features_set.issuperset(FEATURE_SETS['hypertension_basic']):
             model_routing['hypertension'] = 'basic'
         else:
             logger.info("User input features insufficient for hypertension model prediction")
     else:
         logger.info("User input contains hypertension info, skipping hypertension model prediction")
-    if input_features_set.issuperset(CVD_FEATURES):
+    if input_features_set.issuperset(FEATURE_SETS['cvd_full']):
         model_routing['cvd'] = 'full'
-    elif input_features_set.issuperset(CVD_FEATURES_BASIC):
+    elif input_features_set.issuperset(FEATURE_SETS['cvd_basic']):
         model_routing['cvd'] = 'basic'
 
     return model_routing
@@ -365,7 +269,9 @@ def preprocess_input_all(input_data: Dict[str, Any], model) -> np.ndarray:
 
     return X
 
-def predict_single_disease(disease: str, input_data: Dict[str, Any], model_version: Optional[str] = None) -> Dict[str, Any]:
+
+def predict_single_disease(disease: str, input_data: Dict[str, Any], model_version: Optional[str] = None) -> Dict[
+    str, Any]:
     """
     执行疾病预测
 
@@ -486,3 +392,28 @@ def get_model_info(disease: str, model_version: Optional[str] = None) -> Dict[st
         info["n_classes"] = len(model.classes_)
 
     return info
+
+
+if __name__ == "__main__":
+    # 测试代码
+    sample_input = {
+        'RIDAGEYR': 45,
+        'BMXWAIST': 90,
+        'RIAGENDR': 1,
+        'BMXBMI': 27.5,
+        'LBXGH': 6.5,
+        'LBXGLU': 110,
+        'LBDLDLSI': 3.2,
+        'LUXCAPM': 3000,
+        'BPXOSY1': 130,
+        'LBXTC': 5.5,
+        'LBDHDD': 1.2,
+        'LBXSTR': 1.5,
+        'SMQ020': 1,
+        'SMQ040': 2,
+        'ALQ121': 50,
+        'PAD680': 3
+    }
+
+    result = predict_all(sample_input)
+    print(result)

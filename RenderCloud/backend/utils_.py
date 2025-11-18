@@ -132,6 +132,7 @@ def onnx_predict(model: ort.InferenceSession, X: np.ndarray) -> np.ndarray:
         预测类别 (n_samples,)
     """
     wrapper = ONNXModelWrapper(model)
+    #print(f"使用ONNX模型进行预测: {wrapper}")
     return wrapper.predict(X)
 
 
@@ -147,4 +148,5 @@ def onnx_predict_proba(model: ort.InferenceSession, X: np.ndarray) -> np.ndarray
         预测概率 (n_samples, n_classes)
     """
     wrapper = ONNXModelWrapper(model)
+    #print("使用ONNX模型进行概率预测: {wrapper}")
     return wrapper.predict_proba(X)
