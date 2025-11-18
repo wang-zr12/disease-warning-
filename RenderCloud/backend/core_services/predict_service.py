@@ -8,10 +8,12 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Any
-
+'''
+local run:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 返回到 project_root/
 # print(PROJECT_ROOT)
 sys.path.append(str(PROJECT_ROOT))
+'''
 from config_ import MODEL_DIR, MODEL_REGISTRY, FEATURE_SETS, CKD_FEATURES
 from utils_ import is_onnx_model, onnx_predict, onnx_predict_proba
 from metrics_service import SHAPCalculator
