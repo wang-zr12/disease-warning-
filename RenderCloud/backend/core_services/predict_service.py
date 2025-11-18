@@ -161,8 +161,7 @@ def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
     """
 
     model_routing = choose_model_version(input_data)
-    print(model_routing)
-    results = {}
+    results = {'model_routing': model_routing}
     for disease, model_type in model_routing.items():
         # 获取所需特征列表
         key = f"{disease}_{model_type}"
