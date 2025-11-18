@@ -16,7 +16,7 @@ sys.path.append(str(PROJECT_ROOT))
 '''
 from config_ import MODEL_DIR, MODEL_REGISTRY, FEATURE_SETS, CKD_FEATURES
 from utils_ import is_onnx_model, onnx_predict, onnx_predict_proba
-from metrics_service import SHAPCalculator
+from core_services.metrics_service import SHAPCalculator
 
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
