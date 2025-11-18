@@ -18,6 +18,20 @@ class MetricCalculator(ABC):
         """计算指标"""
         pass
 
+def is_tree_model(model) -> bool:
+    if isinstance(model, ort.InferenceSession):
+        return False
+
+    model_name = str(type(model)).lower()
+    tree_keywords = [
+        "lgbm", "lightgbm", "booster",
+        "xgb", "xgboost",
+        "catboost",
+        "randomforest", "random_forest",
+        "gradientboosting", "gradient_boost",
+        "sklearn.ensemble"
+    ]
+    return any(k in model_name for k in tree_keywords)
 
 class SHAPCalculator(MetricCalculator):
     """SHAP值计算器"""
@@ -68,12 +82,8 @@ class SHAPCalculator(MetricCalculator):
                 logger.info(f"使用原生模型 {type(model).__name__} 的 predict_proba")
 
             # ==================== 2. 优先使用 TreeExplainer（最快最准）===================
-            is_tree_model = any(
-                keyword in str(type(model)).lower()
-                for keyword in ["lgbm", "xgb", "catboost", "randomforest", "gradientboosting", "sklearn"]
-            )
-
-            if is_tree_model and not isinstance(model, ort.InferenceSession):
+            
+            if is_tree_model(model) and not isinstance(model, ort.InferenceSession):
                 explainer = shap.TreeExplainer(model)
                 logger.info("使用 TreeExplainer（推荐：速度快、精确）")
                 shap_values = explainer.shap_values(X)
