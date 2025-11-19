@@ -1,0 +1,394 @@
+{
+  "diabetes": {
+    "under_20": {
+      "male": {
+        "mean": 0.3547896604156108,
+        "std_dev": 0.0,
+        "sample_size": 1973
+      },
+      "female": {
+        "mean": 0.2058672156459084,
+        "std_dev": 0.0,
+        "sample_size": 1943
+      }
+    },
+    "20_30": {
+      "male": {
+        "mean": 1.9704433497536946,
+        "std_dev": 0.0,
+        "sample_size": 406
+      },
+      "female": {
+        "mean": 1.417004048582996,
+        "std_dev": 0.0,
+        "sample_size": 494
+      }
+    },
+    "30_40": {
+      "male": {
+        "mean": 3.2388663967611335,
+        "std_dev": 0.0,
+        "sample_size": 494
+      },
+      "female": {
+        "mean": 2.5718608169440245,
+        "std_dev": 0.0,
+        "sample_size": 661
+      }
+    },
+    "40_50": {
+      "male": {
+        "mean": 8.425720620842572,
+        "std_dev": 0.0,
+        "sample_size": 451
+      },
+      "female": {
+        "mean": 9.187279151943462,
+        "std_dev": 0.0,
+        "sample_size": 566
+      }
+    },
+    "50_60": {
+      "male": {
+        "mean": 19.291338582677163,
+        "std_dev": 0.0,
+        "sample_size": 508
+      },
+      "female": {
+        "mean": 17.065390749601274,
+        "std_dev": 0.0,
+        "sample_size": 627
+      }
+    },
+    "60_70": {
+      "male": {
+        "mean": 22.266139657444008,
+        "std_dev": 0.0,
+        "sample_size": 759
+      },
+      "female": {
+        "mean": 19.330453563714904,
+        "std_dev": 0.0,
+        "sample_size": 926
+      }
+    },
+    "70_80": {
+      "male": {
+        "mean": 26.095238095238095,
+        "std_dev": 0.0,
+        "sample_size": 525
+      },
+      "female": {
+        "mean": 21.809369951534734,
+        "std_dev": 0.0,
+        "sample_size": 619
+      }
+    },
+    "80_plus": {
+      "male": {
+        "mean": 22.972972972972975,
+        "std_dev": 0.0,
+        "sample_size": 222
+      },
+      "female": {
+        "mean": 20.14388489208633,
+        "std_dev": 0.0,
+        "sample_size": 278
+      }
+    }
+  },
+  "hypertension": {
+    "under_20": {
+      "male": {
+        "mean": 4.9853372434017595,
+        "std_dev": 0.0,
+        "sample_size": 341
+      },
+      "female": {
+        "mean": 2.2857142857142856,
+        "std_dev": 0.0,
+        "sample_size": 350
+      }
+    },
+    "20_30": {
+      "male": {
+        "mean": 7.125307125307126,
+        "std_dev": 0.0,
+        "sample_size": 407
+      },
+      "female": {
+        "mean": 5.846774193548387,
+        "std_dev": 0.0,
+        "sample_size": 496
+      }
+    },
+    "30_40": {
+      "male": {
+        "mean": 13.8,
+        "std_dev": 0.0,
+        "sample_size": 500
+      },
+      "female": {
+        "mean": 13.823529411764707,
+        "std_dev": 0.0,
+        "sample_size": 680
+      }
+    },
+    "40_50": {
+      "male": {
+        "mean": 26.78185745140389,
+        "std_dev": 0.0,
+        "sample_size": 463
+      },
+      "female": {
+        "mean": 25.08650519031142,
+        "std_dev": 0.0,
+        "sample_size": 578
+      }
+    },
+    "50_60": {
+      "male": {
+        "mean": 43.45351043643264,
+        "std_dev": 0.0,
+        "sample_size": 527
+      },
+      "female": {
+        "mean": 40.15384615384615,
+        "std_dev": 0.0,
+        "sample_size": 650
+      }
+    },
+    "60_70": {
+      "male": {
+        "mean": 52.83018867924528,
+        "std_dev": 0.0,
+        "sample_size": 795
+      },
+      "female": {
+        "mean": 50.72314049586777,
+        "std_dev": 0.0,
+        "sample_size": 968
+      }
+    },
+    "70_80": {
+      "male": {
+        "mean": 62.07513416815742,
+        "std_dev": 0.0,
+        "sample_size": 559
+      },
+      "female": {
+        "mean": 59.11179173047473,
+        "std_dev": 0.0,
+        "sample_size": 653
+      }
+    },
+    "80_plus": {
+      "male": {
+        "mean": 55.45851528384279,
+        "std_dev": 0.0,
+        "sample_size": 229
+      },
+      "female": {
+        "mean": 66.32302405498281,
+        "std_dev": 0.0,
+        "sample_size": 291
+      }
+    }
+  },
+  "cvd": {
+    "under_20": {
+      "male": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 0
+      },
+      "female": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 0
+      }
+    },
+    "20_30": {
+      "male": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 407
+      },
+      "female": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 497
+      }
+    },
+    "30_40": {
+      "male": {
+        "mean": 0.4,
+        "std_dev": 0.0,
+        "sample_size": 500
+      },
+      "female": {
+        "mean": 0.14705882352941177,
+        "std_dev": 0.0,
+        "sample_size": 680
+      }
+    },
+    "40_50": {
+      "male": {
+        "mean": 0.8639308855291578,
+        "std_dev": 0.0,
+        "sample_size": 463
+      },
+      "female": {
+        "mean": 1.5544041450777202,
+        "std_dev": 0.0,
+        "sample_size": 579
+      }
+    },
+    "50_60": {
+      "male": {
+        "mean": 4.743833017077799,
+        "std_dev": 0.0,
+        "sample_size": 527
+      },
+      "female": {
+        "mean": 2.6194144838212634,
+        "std_dev": 0.0,
+        "sample_size": 649
+      }
+    },
+    "60_70": {
+      "male": {
+        "mean": 7.818411097099622,
+        "std_dev": 0.0,
+        "sample_size": 793
+      },
+      "female": {
+        "mean": 5.377456049638056,
+        "std_dev": 0.0,
+        "sample_size": 967
+      }
+    },
+    "70_80": {
+      "male": {
+        "mean": 10.79136690647482,
+        "std_dev": 0.0,
+        "sample_size": 556
+      },
+      "female": {
+        "mean": 6.605222734254992,
+        "std_dev": 0.0,
+        "sample_size": 651
+      }
+    },
+    "80_plus": {
+      "male": {
+        "mean": 13.852813852813853,
+        "std_dev": 0.0,
+        "sample_size": 231
+      },
+      "female": {
+        "mean": 12.371134020618557,
+        "std_dev": 0.0,
+        "sample_size": 291
+      }
+    }
+  },
+  "ckd": {
+    "under_20": {
+      "male": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 0
+      },
+      "female": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 0
+      }
+    },
+    "20_30": {
+      "male": {
+        "mean": 0.0,
+        "std_dev": 0.0,
+        "sample_size": 407
+      },
+      "female": {
+        "mean": 1.8108651911468814,
+        "std_dev": 0.0,
+        "sample_size": 497
+      }
+    },
+    "30_40": {
+      "male": {
+        "mean": 3.0,
+        "std_dev": 0.0,
+        "sample_size": 500
+      },
+      "female": {
+        "mean": 2.3529411764705883,
+        "std_dev": 0.0,
+        "sample_size": 680
+      }
+    },
+    "40_50": {
+      "male": {
+        "mean": 2.375809935205184,
+        "std_dev": 0.0,
+        "sample_size": 463
+      },
+      "female": {
+        "mean": 6.217616580310881,
+        "std_dev": 0.0,
+        "sample_size": 579
+      }
+    },
+    "50_60": {
+      "male": {
+        "mean": 7.7798861480075905,
+        "std_dev": 0.0,
+        "sample_size": 527
+      },
+      "female": {
+        "mean": 12.326656394453005,
+        "std_dev": 0.0,
+        "sample_size": 649
+      }
+    },
+    "60_70": {
+      "male": {
+        "mean": 20.125786163522015,
+        "std_dev": 0.0,
+        "sample_size": 795
+      },
+      "female": {
+        "mean": 23.65702479338843,
+        "std_dev": 0.0,
+        "sample_size": 968
+      }
+    },
+    "70_80": {
+      "male": {
+        "mean": 31.785714285714285,
+        "std_dev": 0.0,
+        "sample_size": 560
+      },
+      "female": {
+        "mean": 29.80030721966206,
+        "std_dev": 0.0,
+        "sample_size": 651
+      }
+    },
+    "80_plus": {
+      "male": {
+        "mean": 44.396551724137936,
+        "std_dev": 0.0,
+        "sample_size": 232
+      },
+      "female": {
+        "mean": 33.21917808219178,
+        "std_dev": 0.0,
+        "sample_size": 292
+      }
+    }
+  }
+}

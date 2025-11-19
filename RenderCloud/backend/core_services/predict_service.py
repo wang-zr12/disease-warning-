@@ -8,13 +8,14 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Any
+from scipy import stats
 '''
 local run:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 返回到 project_root/
 # print(PROJECT_ROOT)
 sys.path.append(str(PROJECT_ROOT))
 '''
-from config_ import MODEL_DIR, MODEL_REGISTRY, FEATURE_SETS, CKD_FEATURES
+from config_ import MODEL_DIR, MODEL_REGISTRY, FEATURE_SETS, CKD_FEATURES, is_feature_modifiable, get_feature_recommendation, get_population_stats
 from utils_ import is_onnx_model, onnx_predict, onnx_predict_proba
 from core_services.metrics_service import SHAPCalculator
 
@@ -142,6 +143,136 @@ def prepare_input_ckd(user_dict: Dict[str, Any]) -> (Dict[str, Any], Dict[str, A
     return features_dict, imputation_meta
 
 
+def get_age_range_key(age):
+    """将年龄转换为年龄段key"""
+    if age is None or pd.isna(age):
+        return None
+    age = int(age)
+    if age < 20:
+        return "under_20"
+    elif age < 30:
+        return "20_30"
+    elif age < 40:
+        return "30_40"
+    elif age < 50:
+        return "40_50"
+    elif age < 60:
+        return "50_60"
+    elif age < 70:
+        return "60_70"
+    elif age < 80:
+        return "70_80"
+    else:
+        return "80_plus"
+
+
+def format_age_range(age_range_key):
+    """将年龄段key格式化为可读字符串"""
+    age_map = {
+        "under_20": "under 20 years",
+        "20_30": "20-30 years",
+        "30_40": "30-40 years",
+        "40_50": "40-50 years",
+        "50_60": "50-60 years",
+        "60_70": "60-70 years",
+        "70_80": "70-80 years",
+        "80_plus": "80+ years"
+    }
+    return age_map.get(age_range_key, age_range_key)
+
+
+def calculate_population_comparison(disease: str, user_risk: float, user_age: Optional[int], user_gender: Optional[int]) -> Optional[Dict[str, Any]]:
+    """
+    计算用户风险与人群的对比
+    
+    Parameters:
+    disease: 疾病名称
+    user_risk: 用户的风险分数（0-100）
+    user_age: 用户年龄
+    user_gender: 用户性别 (1=Male, 2=Female)
+    
+    Returns:
+    population_comparison字典，如果无法计算则返回None
+    """
+    if user_age is None or user_gender is None:
+        return None
+    
+    # 获取人群统计数据
+    population_stats = get_population_stats()
+    if not population_stats or disease not in population_stats:
+        return None
+    
+    # 获取年龄段和性别
+    age_range_key = get_age_range_key(user_age)
+    if age_range_key is None:
+        return None
+    
+    gender_name = "male" if user_gender == 1 else "female"
+    
+    # 查找对应的统计数据
+    disease_stats = population_stats[disease]
+    if age_range_key not in disease_stats:
+        return None
+    
+    age_stats = disease_stats[age_range_key]
+    if gender_name not in age_stats or age_stats[gender_name] is None:
+        return None
+    
+    gender_stats = age_stats[gender_name]
+    population_mean = gender_stats.get("mean", 0.0)
+    population_std_dev = gender_stats.get("std_dev", 0.0)
+    sample_size = gender_stats.get("sample_size", 0)
+    
+    if sample_size == 0:
+        return None
+    
+    # 计算百分位数
+    # 对于患病率数据，使用二项分布的标准差估算
+    # 患病率的标准差 = sqrt(p * (1-p) / n)，其中p是患病率，n是样本数
+    if population_std_dev > 0:
+        # 如果有标准差，直接使用
+        estimated_std_dev = population_std_dev
+    else:
+        # 如果标准差为0（患病率数据），使用二项分布的标准差
+        # std = sqrt(p * (1-p) / n)
+        p = population_mean / 100.0  # 转换为比例
+        if sample_size > 0 and 0 < p < 1:
+            estimated_std_dev = np.sqrt(p * (1 - p) / sample_size) * 100  # 转换回百分比
+        elif population_mean > 0:
+            # 如果患病率>0但无法用二项分布计算，使用一个合理的默认值
+            estimated_std_dev = max(population_mean * 0.15, 2.0)
+        else:
+            # 如果患病率为0，使用一个小的默认标准差，避免z_score=0导致percentile=50
+            # 这样当user_risk=0时，percentile会更低（更合理）
+            estimated_std_dev = 1.0
+    
+    # 计算Z-score和百分位数
+    if estimated_std_dev > 0:
+        z_score = (user_risk - population_mean) / estimated_std_dev
+        percentile = stats.norm.cdf(z_score) * 100
+    else:
+        # 如果标准差仍然为0，使用简单比较
+        if user_risk > population_mean:
+            percentile = 75.0  # 高于均值，设为75百分位
+        elif user_risk < population_mean:
+            percentile = 25.0  # 低于均值，设为25百分位
+        else:
+            percentile = 50.0
+    
+    # 限制百分位数在0-100之间
+    percentile = max(0, min(100, percentile))
+    
+    return {
+        "sample_size": sample_size,
+        "age_range": format_age_range(age_range_key),
+        "gender": gender_name,
+        "user_risk": int(user_risk),
+        "population_mean": round(population_mean, 1),
+        "population_std_dev": round(population_std_dev, 1),
+        "percentile": int(round(percentile))
+    }
+
+
 def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     对所有疾病进行预测，自动选择合适的模型版本
@@ -176,12 +307,55 @@ def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 shap = SHAPCalculator().compute(model, X)
 
-                # 只保留原本不为空的变量shap值
-                valid_features = [k for k, v in input_data.items() if v is not None]
-                shap['shap_values'] = {k: v for k, v in shap['shap_values'].items() if k in valid_features}
+                # 只保留用户输入中不为空的特征
+                valid_features = set([k for k, v in input_data.items() if v is not None])
+                
+                # 获取 feature_importance 列表，过滤有效特征和0值，并添加 modifiable、recommendation 和 value 字段
+                if 'feature_importance' in shap:
+                    all_features = []
+                    for item in shap['feature_importance']:
+                        if item['feature'] in valid_features and item['importance'] != 0:
+                            feature_name = item['feature']
+                            feature_item = {
+                                'feature': feature_name,
+                                'importance': item['importance'],
+                                'modifiable': is_feature_modifiable(feature_name),
+                                'recommendation': get_feature_recommendation(feature_name),
+                                'value': input_data.get(feature_name)  # 添加特征的实际值
+                            }
+                            all_features.append(feature_item)
+                else:
+                    all_features = []
+                
+                # 分离增加风险和降低风险的特征
+                increasing_risk = [
+                    item for item in all_features 
+                    if item['importance'] > 0
+                ]
+                decreasing_risk = [
+                    item for item in all_features 
+                    if item['importance'] < 0
+                ]
+                
+                # 排序：按绝对值降序
+                increasing_risk.sort(key=lambda x: abs(x['importance']), reverse=True)
+                decreasing_risk.sort(key=lambda x: abs(x['importance']), reverse=True)
+                
+                # 只取前4个
+                increasing_risk = increasing_risk[:4]
+                decreasing_risk = decreasing_risk[:4]
+                
+                shap_result = {
+                    "increasing_risk": increasing_risk,
+                    "decreasing_risk": decreasing_risk
+                }
+                
             except Exception as e:
                 logger.warning(f"SHAP计算失败: {e}")
-                shap = {'shap_values': {str(e)}}
+                shap_result = {
+                    "increasing_risk": [],
+                    "decreasing_risk": []
+                }
 
             X = np.array([list(X[feat] for feat in sorted(X.keys()))])  # 转Dict为2D数组
             # 根据模型类型执行预测
@@ -197,8 +371,28 @@ def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
             confidence = float(max(probabilities))
             risk = confidence * 100 if prediction == 1 else (1 - confidence) * 100
 
-            results[disease] = {"prediction": prediction, "confidence": confidence, "risk": int(risk),
-                                "shap": shap['shap_values']}  # 对负类（健康）的SHAP值
+            # 计算人群对比
+            user_age = input_data.get('RIDAGEYR')
+            user_gender = input_data.get('RIAGENDR')
+            population_comparison = calculate_population_comparison(disease, risk, user_age, user_gender)
+            
+            # 调试日志
+            if population_comparison is None:
+                logger.debug(f"{disease} population_comparison 计算失败: age={user_age}, gender={user_gender}")
+
+            results[disease] = {
+                "prediction": prediction, 
+                "confidence": confidence, 
+                "risk": int(risk),
+                "shap": shap_result
+            }
+            
+            # 如果成功计算了人群对比，添加到结果中
+            if population_comparison is not None:
+                results[disease]["population_comparison"] = population_comparison
+            else:
+                # 即使计算失败，也添加一个空对象或错误信息，方便调试
+                logger.warning(f"{disease} 无法计算 population_comparison: age={user_age}, gender={user_gender}")
         except Exception as e:
             results[disease] = {"error": str(e)}
 
