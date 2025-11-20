@@ -10,6 +10,29 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 返回到 project_root/
 MODEL_DIR = Path(f"{PROJECT_ROOT}/backend/models")
 DATA_DIR = Path(f"{PROJECT_ROOT}/data")
 raw_data_file = DATA_DIR / "nhanes_2021_2023_master.csv"
+POPULATION_STATS_FILE = DATA_DIR / "population_stats.json"
+
+# 加载人群统计数据（懒加载）
+_population_stats_cache = None
+
+def load_population_stats():
+    """加载人群统计数据"""
+    global _population_stats_cache
+    if _population_stats_cache is None:
+        if POPULATION_STATS_FILE.exists():
+            try:
+                with open(POPULATION_STATS_FILE, 'r') as f:
+                    _population_stats_cache = json.load(f)
+            except Exception as e:
+                print(f"[Warning] Failed to load population stats: {e}")
+                _population_stats_cache = {}
+        else:
+            _population_stats_cache = {}
+    return _population_stats_cache
+
+def get_population_stats():
+    """获取人群统计数据"""
+    return load_population_stats()
 
 
 def safe_load_model(model_path):
@@ -162,6 +185,119 @@ FEATURE_SETS = {
     'cvd_full': CVD_FEATURES,
     'cvd_basic': CVD_FEATURES_BASIC,
 }
+
+# Feature Modifiability Mapping
+# True = 可以通过自我努力改变 (modifiable)
+# False = 不可改变 (non-modifiable, 如年龄、性别、病史等)
+FEATURE_MODIFIABILITY = {
+    # 可修改的特征 (生活方式、体检指标等)
+    'BMXBMI': True,
+    'BMXWAIST': True,
+    'BPXOSY1': True, 'BPXOSY2': True, 'BPXOSY3': True, 'BPXOSY4': True,
+    'BPXSY1': True, 'BPXSY2': True, 'BPXSY3': True, 'BPXSY4': True,
+    'BPXDI1': True, 'BPXDI2': True, 'BPXDI3': True, 'BPXDI4': True,
+    'LBXGH': True,
+    'LBXGLU': True,
+    'LBDGLUSI': True,
+    'LBDLDLSI': True,
+    'LBDLDL': True,
+    'LBXTC': True,
+    'LBDHDD': True,
+    'LBXSTR': True,
+    'LBXSUA': True,
+    'LBXSATSI': True,
+    'LUXCAPM': True,
+    'SMQ020': True,
+    'SMQ040': True,
+    'ALQ121': True,
+    'PAD680': True,
+    'INDFMPIR': True,
+    
+    # 不可修改的特征 (人口统计学、病史等)
+    'RIDAGEYR': False,
+    'RIAGENDR': False,
+    'RIDRETH3': False,
+    'MCQ160A': False,
+    'MCQ160P': False,
+    'MCQ160D': False,
+    'MCQ500': False,
+    'OSQ230': False,
+    'BPQ020': False,
+    'DIQ010': False,
+}
+
+# Feature Recommendations Mapping
+# Short recommendations for each feature (in English)
+FEATURE_RECOMMENDATIONS = {
+    # 可修改的特征建议
+    'BMXBMI': "Maintain a healthy weight through balanced diet and regular exercise",
+    'BMXWAIST': "Reduce waist circumference by losing weight and doing core exercises",
+    'BPXOSY1': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXOSY2': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXOSY3': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXOSY4': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXSY1': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXSY2': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXSY3': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXSY4': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXDI1': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXDI2': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXDI3': "Lower blood pressure through diet, exercise, and stress management",
+    'BPXDI4': "Lower blood pressure through diet, exercise, and stress management",
+    'LBXGH': "Control blood sugar through diet, exercise, and medication if needed",
+    'LBXGLU': "Manage fasting glucose with healthy eating and regular physical activity",
+    'LBDGLUSI': "Manage fasting glucose with healthy eating and regular physical activity",
+    'LBDLDLSI': "Lower LDL cholesterol with diet changes and regular exercise",
+    'LBDLDL': "Lower LDL cholesterol with diet changes and regular exercise",
+    'LBXTC': "Reduce total cholesterol through diet and lifestyle modifications",
+    'LBDHDD': "Increase HDL cholesterol through regular exercise and healthy fats",
+    'LBXSTR': "Lower triglycerides by reducing sugar intake and increasing exercise",
+    'LBXSUA': "Reduce uric acid by limiting purine-rich foods and staying hydrated",
+    'LBXSATSI': "Improve liver health through diet, exercise, and limiting alcohol",
+    'LUXCAPM': "Improve lung capacity through regular aerobic exercise and breathing exercises",
+    'SMQ020': "Quit smoking to reduce health risks",
+    'SMQ040': "Quit smoking to reduce health risks",
+    'ALQ121': "Reduce alcohol consumption or quit drinking for better health",
+    'PAD680': "Increase physical activity levels for better cardiovascular health",
+    'INDFMPIR': "Consider financial planning and career development opportunities",
+    
+    # 不可修改的特征建议（一般性建议）
+    'RIDAGEYR': "Focus on age-appropriate health screenings and preventive care",
+    'RIAGENDR': "Follow gender-specific health guidelines and regular checkups",
+    'RIDRETH3': "Be aware of any ethnicity-specific health risk factors",
+    'MCQ160A': "Manage arthritis with medication, exercise, and joint care",
+    'MCQ160P': "Follow COPD management plan with medications and pulmonary rehabilitation",
+    'MCQ160D': "Manage angina with medications, lifestyle changes, and regular monitoring",
+    'MCQ500': "Follow cancer survivorship care plan and regular follow-ups",
+    'OSQ230': "Inform healthcare providers about metal implants before medical procedures",
+    'BPQ020': "Manage hypertension with medications and lifestyle modifications",
+    'DIQ010': "Manage diabetes with medications, diet, exercise, and regular monitoring",
+}
+
+def is_feature_modifiable(feature_name: str) -> bool:
+    """
+    判断特征是否可以通过自我努力改变
+    
+    Args:
+        feature_name: 特征名称
+        
+    Returns:
+        True if modifiable, False if non-modifiable
+        如果特征不在映射中，默认返回 True (假设是可修改的)
+    """
+    return FEATURE_MODIFIABILITY.get(feature_name, True)  # 默认返回 True
+
+def get_feature_recommendation(feature_name: str) -> Optional[str]:
+    """
+    获取特征的健康建议
+    
+    Args:
+        feature_name: 特征名称
+        
+    Returns:
+        建议字符串，如果特征不在映射中，返回 None
+    """
+    return FEATURE_RECOMMENDATIONS.get(feature_name, None)
 
 def get_model_version(disease: str) -> Optional[str]:
     """
