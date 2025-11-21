@@ -28,7 +28,10 @@ app.add_middleware(
     allow_headers=["*"],  # 允许所有头部
 )
 # --- CORS 设置结束 ---
-
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+    
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Disease Warning API!"}
