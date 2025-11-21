@@ -6,14 +6,16 @@ import onnxruntime as ort
 import os
 import json
 import pandas as pd
+
 PROJECT_ROOT = Path(__file__).resolve().parent  # 返回到 project_root/
 MODEL_DIR = Path(f"{PROJECT_ROOT}/models")
 DATA_DIR = Path(f"{PROJECT_ROOT}/data")
 raw_data_file = DATA_DIR / "nhanes_2021_2023_master.csv"
 POPULATION_STATS_FILE = DATA_DIR / "population_stats.json"
-train_data_df = pd.read_csv(raw_data_file)
+train_data_file = pd.read_csv(raw_data_file)
 # 加载人群统计数据（懒加载）
 _population_stats_cache = None
+
 
 def load_population_stats():
     """加载人群统计数据"""
@@ -30,9 +32,13 @@ def load_population_stats():
             _population_stats_cache = {}
     return _population_stats_cache
 
+
 def get_population_stats():
     """获取人群统计数据"""
     return load_population_stats()
+
+
+population_stats = get_population_stats()
 
 
 def safe_load_model(model_path):
@@ -212,7 +218,7 @@ FEATURE_MODIFIABILITY = {
     'ALQ121': True,
     'PAD680': True,
     'INDFMPIR': True,
-    
+
     # 不可修改的特征 (人口统计学、病史等)
     'RIDAGEYR': False,
     'RIAGENDR': False,
@@ -260,7 +266,7 @@ FEATURE_RECOMMENDATIONS = {
     'ALQ121': "Reduce alcohol consumption or quit drinking for better health",
     'PAD680': "Increase physical activity levels for better cardiovascular health",
     'INDFMPIR': "Consider financial planning and career development opportunities",
-    
+
     # 不可修改的特征建议（一般性建议）
     'RIDAGEYR': "Focus on age-appropriate health screenings and preventive care",
     'RIAGENDR': "Follow gender-specific health guidelines and regular checkups",
@@ -273,6 +279,7 @@ FEATURE_RECOMMENDATIONS = {
     'BPQ020': "Manage hypertension with medications and lifestyle modifications",
     'DIQ010': "Manage diabetes with medications, diet, exercise, and regular monitoring",
 }
+
 
 def is_feature_modifiable(feature_name: str) -> bool:
     """
@@ -287,6 +294,7 @@ def is_feature_modifiable(feature_name: str) -> bool:
     """
     return FEATURE_MODIFIABILITY.get(feature_name, True)  # 默认返回 True
 
+
 def get_feature_recommendation(feature_name: str) -> Optional[str]:
     """
     获取特征的健康建议
@@ -298,6 +306,7 @@ def get_feature_recommendation(feature_name: str) -> Optional[str]:
         建议字符串，如果特征不在映射中，返回 None
     """
     return FEATURE_RECOMMENDATIONS.get(feature_name, None)
+
 
 def get_model_version(disease: str) -> Optional[str]:
     """
