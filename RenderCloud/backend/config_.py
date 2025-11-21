@@ -5,13 +5,13 @@ import joblib
 import onnxruntime as ort
 import os
 import json
-
+import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent  # 返回到 project_root/
 MODEL_DIR = Path(f"{PROJECT_ROOT}/models")
 DATA_DIR = Path(f"{PROJECT_ROOT}/data")
 raw_data_file = DATA_DIR / "nhanes_2021_2023_master.csv"
 POPULATION_STATS_FILE = DATA_DIR / "population_stats.json"
-
+train_data_df = pd.read_csv(raw_data_file)
 # 加载人群统计数据（懒加载）
 _population_stats_cache = None
 
