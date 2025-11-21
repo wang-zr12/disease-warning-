@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Any
 from scipy import stats
+import random
 '''
 local run:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent  # 返回到 project_root/
