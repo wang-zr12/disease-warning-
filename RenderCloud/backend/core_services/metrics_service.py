@@ -1,6 +1,8 @@
 import onnxruntime as ort
-
-from config_ import MODEL_DIR, get_model_version, get_all_diseases
+from onnx import ModelProto
+from config_ import MODEL_DIR, get_model_version, get_all_diseases, train_data_df
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
 from utils_ import onnx_predict_proba, is_onnx_model
 import pickle
 from typing import Any, Dict, List, Optional
@@ -8,7 +10,14 @@ import numpy as np
 import shap
 from abc import ABC, abstractmethod
 import logging
+
 logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
 
 class MetricCalculator(ABC):
     """指标计算器抽象基类"""
@@ -19,10 +28,26 @@ class MetricCalculator(ABC):
         pass
 
 
+def is_tree_model(model) -> bool:
+    if isinstance(model, ort.InferenceSession):
+        return False
+
+    model_name = str(type(model)).lower()
+    tree_keywords = [
+        "lgbm", "lightgbm", "booster",
+        "xgb", "xgboost",
+        "catboost",
+        "randomforest", "random_forest",
+        "gradientboosting", "gradient_boost",
+        "sklearn.ensemble"
+    ]
+    return any(k in model_name for k in tree_keywords)
+
+
 class SHAPCalculator(MetricCalculator):
     """SHAP值计算器"""
 
-    def __init__(self, background_samples: int = 100):
+    def __init__(self, background_samples: int = 100, train_data_df=train_data_df):
         """
         初始化SHAP计算器
 
@@ -30,70 +55,79 @@ class SHAPCalculator(MetricCalculator):
             background_samples: 背景样本数量，用于KernelExplainer
         """
         self.background_samples = background_samples
+        self.train_data_df = train_data_df
 
     def compute(
             self,
             model,
             input_data: Dict[str, Any],
-            feature_names: Optional[List[str]] = None
+            feature_names: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        计算SHAP值
-
-        Args:
-            model: 已加载的模型
-            input_data: 输入特征字典
-            feature_names: 特征名称列表
-
-        Returns:
-            包含SHAP值的字典
-        """
         try:
             if feature_names is None:
                 feature_names = sorted(input_data.keys())
 
-            # 构造单条样本输入
-            X = np.array([[input_data[f] for f in feature_names]], dtype=np.float32)  # (1, n_features)
+            X = np.array([[input_data[f] for f in feature_names]], dtype=float)
 
-            # ==================== 1. 判断模型类型并包装 predict_proba ====================
+            # ==================== 1. 智能 predict_proba（只返回正类概率）===================
             if isinstance(model, ort.InferenceSession):
-                # ONNX 模型：使用你写好的工具函数
-                predict_proba_func = lambda X: onnx_predict_proba(model, X)
-                logger.info("ONNX 模型，使用 utils_.py 中的 onnx_predict_proba")
+                def predict_proba_func(data):
+                    # ONNX 输出可能是 [neg, pos] 或单值
+                    return onnx_predict_proba(model, data)
+
+                logger.info("ONNX 模型 → 包装 predict_proba (正类)")
+
             else:
-                # 普通模型（sklearn, lightgbm, xgboost 等）直接使用 predict_proba
+                # 所有 sklearn 模型（包括 CalibratedClassifierCV）
                 if not hasattr(model, "predict_proba"):
-                    raise ValueError("模型必须支持 predict_proba 或为 ONNX InferenceSession")
-                predict_proba_func = model.predict_proba
-                logger.info(f"使用原生模型 {type(model).__name__} 的 predict_proba")
+                    raise ValueError("模型必须支持 predict_proba")
 
-            # ==================== 2. 优先使用 TreeExplainer（最快最准）===================
-            is_tree_model = any(
-                keyword in str(type(model)).lower()
-                for keyword in ["lgbm", "xgb", "catboost", "randomforest", "gradientboosting", "sklearn"]
-            )
+                def predict_proba_func(data):
+                    return model.predict_proba(data)[:, 1]
 
-            if is_tree_model and not isinstance(model, ort.InferenceSession):
-                explainer = shap.TreeExplainer(model)
-                logger.info("使用 TreeExplainer（推荐：速度快、精确）")
-                shap_values = explainer.shap_values(X)
+                logger.info(f"sklearn 模型 {type(model).__name__} → 原生 predict_proba")
 
-                # TreeExplainer 二分类返回 list[2]，我们只取正类（class1）
-                if isinstance(shap_values, list):
-                    sv_positive = np.asarray(shap_values[1]).ravel() if len(shap_values) > 1 else np.asarray(
-                        shap_values[0]).ravel()
+            # ==================== 2. 终极智能 Explainer 选择器 ====================
+            explainer = None
+            sv_positive = None
+            base_value = 0.0
+
+            # 情况1：原始 LightGBM / XGBoost / RandomForest（非 ONNX）
+            if not isinstance(model, ort.InferenceSession):
+                if any(k in str(type(model)).lower() for k in ["lgbm", "xgb", "randomforest", "gradientboosting"]):
+                    logger.info("原生树模型 → TreeExplainer")
+                    explainer = shap.TreeExplainer(model)
+                    raw = explainer.shap_values(X)
+                    sv_positive = np.array(raw[1] if isinstance(raw, list) and len(raw) > 1 else raw).ravel()
                     base_value = float(
-                        explainer.expected_value[1] if len(explainer.expected_value) > 1 else explainer.expected_value)
-                else:
-                    sv_positive = np.asarray(shap_values).ravel()
+                        explainer.expected_value[1] if isinstance(explainer.expected_value, (list, np.ndarray)) and len(
+                            explainer.expected_value) > 1 else explainer.expected_value)
+
+                # 情况2：CalibratedClassifierCV 或 纯 LogisticRegression → LinearExplainer
+                elif isinstance(model, (CalibratedClassifierCV, LogisticRegression)):
+                    logger.info(f"{type(model).__name__} → LinearExplainer（<1秒）")
+                    background = self._safe_background(train_data_df, feature_names)
+                    # Calibrated 也要用包装后的模型
+                    explainer = shap.LinearExplainer(model, background)
+                    sv_positive = explainer.shap_values(X).ravel()
                     base_value = float(explainer.expected_value)
 
+                else:
+                    # 兜底低采样 Kernel
+                    logger.info("其他 sklearn 模型 → 低采样 KernelExplainer")
+                    background = self._safe_background(train_data_df, feature_names, size=30)
+                    explainer = shap.KernelExplainer(predict_proba_func, background)
+                    raw = explainer.shap_values(X, nsamples=40, l1_reg="num_features(10)")
+                    sv_positive = np.array(raw).ravel()
+                    base_value = float(explainer.expected_value)
+
+            # 情况3：ONNX 模型 → 自动检测内部结构
             else:
-                # ==================== 3. 其他模型（包括 ONNX）使用 KernelExplainer ====================
-                logger.info("使用 KernelExplainer（ONNX 或非树模型）")
+
+                logger.info("使用 KernelExplainer（ONNX）")
 
                 # 构造更合理的背景数据集
-                background = np.zeros((self.background_samples, len(feature_names)), dtype=np.float32)
+                background = self._safe_background(train_data_df, feature_names, size=self.background_samples)
                 for i, f in enumerate(feature_names):
                     val = float(input_data.get(f, 0))
                     scale = max(abs(val) * 0.2, 1e-3)
@@ -124,26 +158,35 @@ class SHAPCalculator(MetricCalculator):
                 else:
                     base_value = float(exp) if np.isscalar(exp) else float(exp.ravel()[0])
 
-            # ==================== 4. 最终返回：只返回正类贡献（你最想要的）===================
-            shap_dict = {
-                feature: float(value)
-                for feature, value in zip(feature_names, sv_positive)
-            }
-
-            # 按绝对值排序
+            # ==================== 3. 统一返回 ====================
+            shap_dict = {f: float(v) for f, v in zip(feature_names, sv_positive)}
             sorted_items = sorted(shap_dict.items(), key=lambda x: abs(x[1]), reverse=True)
 
             return {
-                "shap_values": shap_dict,  # { "age": 0.25, "oldpeak": -0.18, ... }
-                "base_value": base_value,  # 正类的 base value（logit 空间）
+                "shap_values": shap_dict,
+                "base_value": float(base_value),
                 "feature_importance": [
                     {"feature": f, "importance": v} for f, v in sorted_items
                 ]
             }
 
         except Exception as e:
-            logger.error(f"SHAP计算失败: {str(e)}", exc_info=True)
-            raise ValueError(f"SHAP计算失败: {str(e)}")
+            logger.error(f"SHAP计算失败: {e}", exc_info=True)
+            raise ValueError(f"SHAP计算失败: {e}")
+
+    def _safe_background(self, train_data_df, feature_names, size=None):
+        """生成不含 NaN 的背景数据（关键！解决你的 NaN 错误）"""
+        size = size or self.background_samples
+        if train_data_df is not None and len(train_data_df) > 0:
+            try:
+                bg = train_data_df[feature_names].sample(n=min(size, len(train_data_df)), random_state=42)
+                bg = bg.fillna(bg.median(numeric_only=True))  # 中位数填 NaN
+                return bg.values
+            except:
+                pass
+        # 用中位数或 0
+        return np.zeros((size, len(feature_names)))
+
 
 class FeatureImportanceCalculator(MetricCalculator):
     """特征重要性计算器"""

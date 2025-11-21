@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from core_services.metrics_service import metrics_service
 
-router = APIRouter(prefix="/metrics", tags=["指标分析"])
+router = APIRouter()
 class MetricRequest(BaseModel):
     """指标计算请求"""
     disease: str = Field(

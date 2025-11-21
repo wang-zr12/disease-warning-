@@ -3,7 +3,7 @@ uvicorn
 pydantic
 pandas
 numpy==1.24.3
-scikit-learn==1.2.2
+scikit-learn==1.6.1
 joblib==1.2.0
 requests
 gunicorn
@@ -11,4 +11,6 @@ shap
 xgboost
 onnxruntime
 lightgbm
+onnx
+random
 
