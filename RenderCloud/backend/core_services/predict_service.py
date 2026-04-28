@@ -375,6 +375,9 @@ def predict_all(input_data: Dict[str, Any]) -> Dict[str, Any]:
             if disease == 'ckd' and prediction == 0 and confidence > 0.9:
                 confidence = random.uniform(0.7, 0.9)
             risk = confidence * 100 if prediction == 1 else (1 - confidence) * 100
+            if disease == 'ckd' and prediction == 0 and confidence > 0.9:
+                confidence = random.uniform(0.7, 0.9)
+            risk = confidence * 100 if prediction == 1 else (1 - confidence) * 100
 
             # 计算人群对比
             user_age = input_data.get('RIDAGEYR')
