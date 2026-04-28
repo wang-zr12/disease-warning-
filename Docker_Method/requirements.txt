@@ -1,0 +1,12 @@
+flask
+streamlit
+requests
+pandas
+numpy
+scikit-learn
+pydantic==2.9.2
+python-dotenv
+joblib==1.4.2
+gunicorn==22.0.0
+fastapi
+uvicorn
